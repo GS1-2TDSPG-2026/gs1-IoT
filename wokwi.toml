@@ -1,4 +1,4 @@
 [wokwi]
 version = 1
-firmware = "build/esp32.esp32.esp32doit-devkit-v1/gs1_IoT.ino.bin"
-elf = "build/esp32.esp32.esp32doit-devkit-v1/gs1_IoT.ino.elf"
+firmware = "build/esp32.esp32.esp32doit-devkit-v1/Dispositivo-IoT.ino.bin"
+elf = "build/esp32.esp32.esp32doit-devkit-v1/Dispositivo-IoT.ino.elf"

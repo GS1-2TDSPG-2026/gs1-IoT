@@ -22,7 +22,7 @@
     {
       "type": "wokwi-led",
       "id": "ledGreen",
-      "top": 30,
+      "top": 40,
       "left": 260,
       "attrs": {
         "color": "green"
@@ -40,7 +40,7 @@
     {
       "type": "wokwi-resistor",
       "id": "rGreen",
-      "top": 35,
+      "top": 45,
       "left": 180,
       "attrs": {
         "value": "220"
@@ -48,11 +48,11 @@
     }
   ],
   "connections": [
-    ["esp:25", "rRed:1", "green", []],
+    ["esp:D25", "rRed:1", "green", []],
     ["rRed:2", "ledRed:A", "green", []],
     ["ledRed:C", "esp:GND.1", "black", []],
 
-    ["esp:26", "rGreen:1", "green", []],
+    ["esp:D26", "rGreen:1", "green", []],
     ["rGreen:2", "ledGreen:A", "green", []],
     ["ledGreen:C", "esp:GND.2", "black", []]
   ],
