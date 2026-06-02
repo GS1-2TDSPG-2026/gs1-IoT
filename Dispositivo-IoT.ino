@@ -1,7 +1,11 @@
+#include <WiFi.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+
+const char* WIFI_SSID = "Wokwi-GUEST";
+const char* WIFI_PASSWORD = "";
 
 const int LED_VERMELHO_PIN = 25;
 const int LED_VERDE_PIN = 26;
@@ -30,6 +34,53 @@ DallasTemperature sensorTemperatura(&oneWire);
 
 float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, float saidaMax) {
   return (valor - entradaMin) * (saidaMax - saidaMin) / (entradaMax - entradaMin) + saidaMin;
+}
+
+void conectarWiFi() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Conectando");
+  lcd.setCursor(0, 1);
+  lcd.print("WiFi...");
+
+  Serial.print("Conectando ao WiFi: ");
+  Serial.println(WIFI_SSID);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  int tentativas = 0;
+
+  while (WiFi.status() != WL_CONNECTED && tentativas < 30) {
+    delay(500);
+    Serial.print(".");
+    tentativas++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println();
+    Serial.println("WiFi conectado!");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi conectado");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP());
+
+    delay(2500);
+  } else {
+    Serial.println();
+    Serial.println("Falha ao conectar WiFi.");
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Falha WiFi");
+    lcd.setCursor(0, 1);
+    lcd.print("Verifique rede");
+
+    delay(2500);
+  }
 }
 
 float lerPH() {
@@ -134,12 +185,18 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("Turbidez OK");
+  lcd.print("Iniciando WiFi");
 
-  delay(2000);
+  delay(1500);
+
+  conectarWiFi();
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    conectarWiFi();
+  }
+
   float ph = lerPH();
   int luminosidade = lerLuminosidade();
   float temperatura = lerTemperatura();
