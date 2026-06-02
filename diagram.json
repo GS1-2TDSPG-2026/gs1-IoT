@@ -54,9 +54,16 @@
       "attrs": {}
     },
     {
+      "type": "wokwi-photoresistor-sensor",
+      "id": "ldr",
+      "top": 250,
+      "left": 700,
+      "attrs": {}
+    },
+    {
       "type": "wokwi-lcd1602",
       "id": "lcd",
-      "top": 310,
+      "top": 340,
       "left": 40,
       "attrs": {
         "pins": "i2c"
@@ -75,6 +82,10 @@
     ["potPH:SIG", "esp:D34", "blue", []],
     ["potPH:VCC", "esp:3V3", "red", []],
     ["potPH:GND", "esp:GND.1", "black", []],
+
+    ["ldr:AO", "esp:D35", "blue", []],
+    ["ldr:VCC", "esp:3V3", "red", []],
+    ["ldr:GND", "esp:GND.2", "black", []],
 
     ["lcd:SDA", "esp:D21", "blue", []],
     ["lcd:SCL", "esp:D22", "green", []],
