@@ -54,17 +54,24 @@
       "attrs": {}
     },
     {
+      "type": "wokwi-potentiometer",
+      "id": "potTurbidez",
+      "top": 430,
+      "left": 480,
+      "attrs": {}
+    },
+    {
       "type": "wokwi-photoresistor-sensor",
       "id": "ldr",
       "top": 250,
-      "left": 700,
+      "left": 720,
       "attrs": {}
     },
     {
       "type": "wokwi-ds18b20",
       "id": "tempSensor",
       "top": 430,
-      "left": 700,
+      "left": 720,
       "attrs": {}
     },
     {
@@ -89,6 +96,10 @@
     ["potPH:SIG", "esp:D34", "blue", []],
     ["potPH:VCC", "esp:3V3", "red", []],
     ["potPH:GND", "esp:GND.1", "black", []],
+
+    ["potTurbidez:SIG", "esp:D32", "blue", []],
+    ["potTurbidez:VCC", "esp:3V3", "red", []],
+    ["potTurbidez:GND", "esp:GND.2", "black", []],
 
     ["ldr:AO", "esp:D35", "blue", []],
     ["ldr:VCC", "esp:3V3", "red", []],

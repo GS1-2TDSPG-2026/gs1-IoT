@@ -9,6 +9,7 @@ const int LED_VERDE_PIN = 26;
 const int PH_PIN = 34;
 const int LDR_PIN = 35;
 const int TEMP_PIN = 4;
+const int TURBIDEZ_PIN = 32;
 
 const float PH_MIN_IDEAL = 6.5;
 const float PH_MAX_IDEAL = 8.5;
@@ -18,6 +19,9 @@ const int LUMINOSIDADE_MAX_IDEAL = 900;
 
 const float TEMP_MIN_IDEAL = 20.0;
 const float TEMP_MAX_IDEAL = 30.0;
+
+const int TURBIDEZ_MIN_IDEAL = 100;
+const int TURBIDEZ_MAX_IDEAL = 700;
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -52,6 +56,12 @@ float lerTemperatura() {
   return temperatura;
 }
 
+int lerTurbidez() {
+  int leituraADC = analogRead(TURBIDEZ_PIN);
+  int turbidez = map(leituraADC, 0, 4095, 0, 1000);
+  return constrain(turbidez, 0, 1000);
+}
+
 void atualizarAtuadores(bool sistemaNormal) {
   if (sistemaNormal) {
     digitalWrite(LED_VERDE_PIN, HIGH);
@@ -62,28 +72,39 @@ void atualizarAtuadores(bool sistemaNormal) {
   }
 }
 
-void atualizarDisplay(float ph, int luminosidade, float temperatura, bool phNormal, bool luzNormal, bool tempNormal) {
+void atualizarDisplay(
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
+  bool phNormal,
+  bool luzNormal,
+  bool tempNormal,
+  bool turbidezNormal
+) {
   lcd.clear();
 
   lcd.setCursor(0, 0);
   lcd.print("pH:");
   lcd.print(ph, 1);
-  lcd.print(" L:");
-  lcd.print(luminosidade);
+  lcd.print(" T:");
+  lcd.print(temperatura, 1);
 
   lcd.setCursor(0, 1);
-  lcd.print("T:");
-  lcd.print(temperatura, 1);
-  lcd.print(" ");
 
-  if (phNormal && luzNormal && tempNormal) {
-    lcd.print("NORMAL");
+  if (phNormal && luzNormal && tempNormal && turbidezNormal) {
+    lcd.print("L:");
+    lcd.print(luminosidade);
+    lcd.print(" Tu:");
+    lcd.print(turbidez);
   } else if (!phNormal) {
     lcd.print("ALERTA PH");
   } else if (!luzNormal) {
     lcd.print("ALERTA LUZ");
   } else if (!tempNormal) {
     lcd.print("ALERTA TEMP");
+  } else if (!turbidezNormal) {
+    lcd.print("ALERTA TURB");
   }
 }
 
@@ -96,6 +117,7 @@ void setup() {
 
   pinMode(PH_PIN, INPUT);
   pinMode(LDR_PIN, INPUT);
+  pinMode(TURBIDEZ_PIN, INPUT);
 
   digitalWrite(LED_VERMELHO_PIN, LOW);
   digitalWrite(LED_VERDE_PIN, LOW);
@@ -112,7 +134,7 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("Temp adicionada");
+  lcd.print("Turbidez OK");
 
   delay(2000);
 }
@@ -121,15 +143,17 @@ void loop() {
   float ph = lerPH();
   int luminosidade = lerLuminosidade();
   float temperatura = lerTemperatura();
+  int turbidez = lerTurbidez();
 
   bool phNormal = ph >= PH_MIN_IDEAL && ph <= PH_MAX_IDEAL;
   bool luzNormal = luminosidade >= LUMINOSIDADE_MIN_IDEAL && luminosidade <= LUMINOSIDADE_MAX_IDEAL;
   bool tempNormal = temperatura >= TEMP_MIN_IDEAL && temperatura <= TEMP_MAX_IDEAL;
+  bool turbidezNormal = turbidez >= TURBIDEZ_MIN_IDEAL && turbidez <= TURBIDEZ_MAX_IDEAL;
 
-  bool sistemaNormal = phNormal && luzNormal && tempNormal;
+  bool sistemaNormal = phNormal && luzNormal && tempNormal && turbidezNormal;
 
   atualizarAtuadores(sistemaNormal);
-  atualizarDisplay(ph, luminosidade, temperatura, phNormal, luzNormal, tempNormal);
+  atualizarDisplay(ph, luminosidade, temperatura, turbidez, phNormal, luzNormal, tempNormal, turbidezNormal);
 
   delay(1000);
 }
