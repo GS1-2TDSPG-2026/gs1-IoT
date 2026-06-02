@@ -6,15 +6,15 @@
     {
       "type": "wokwi-esp32-devkit-v1",
       "id": "esp",
-      "top": 0,
-      "left": 0,
+      "top": 40,
+      "left": 120,
       "attrs": {}
     },
     {
       "type": "wokwi-led",
       "id": "ledRed",
-      "top": -40,
-      "left": 260,
+      "top": 20,
+      "left": 520,
       "attrs": {
         "color": "red"
       }
@@ -22,8 +22,8 @@
     {
       "type": "wokwi-led",
       "id": "ledGreen",
-      "top": 40,
-      "left": 260,
+      "top": 100,
+      "left": 520,
       "attrs": {
         "color": "green"
       }
@@ -31,8 +31,8 @@
     {
       "type": "wokwi-resistor",
       "id": "rRed",
-      "top": -35,
-      "left": 180,
+      "top": 25,
+      "left": 420,
       "attrs": {
         "value": "220"
       }
@@ -40,10 +40,26 @@
     {
       "type": "wokwi-resistor",
       "id": "rGreen",
-      "top": 45,
-      "left": 180,
+      "top": 105,
+      "left": 420,
       "attrs": {
         "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "potPH",
+      "top": 250,
+      "left": 480,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd",
+      "top": 310,
+      "left": 40,
+      "attrs": {
+        "pins": "i2c"
       }
     }
   ],
@@ -54,7 +70,16 @@
 
     ["esp:D26", "rGreen:1", "green", []],
     ["rGreen:2", "ledGreen:A", "green", []],
-    ["ledGreen:C", "esp:GND.2", "black", []]
+    ["ledGreen:C", "esp:GND.2", "black", []],
+
+    ["potPH:SIG", "esp:D34", "blue", []],
+    ["potPH:VCC", "esp:3V3", "red", []],
+    ["potPH:GND", "esp:GND.1", "black", []],
+
+    ["lcd:SDA", "esp:D21", "blue", []],
+    ["lcd:SCL", "esp:D22", "green", []],
+    ["lcd:VCC", "esp:5V", "red", []],
+    ["lcd:GND", "esp:GND.1", "black", []]
   ],
   "dependencies": {}
 }
