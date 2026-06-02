@@ -1,11 +1,14 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 const int LED_VERMELHO_PIN = 25;
 const int LED_VERDE_PIN = 26;
 
 const int PH_PIN = 34;
 const int LDR_PIN = 35;
+const int TEMP_PIN = 4;
 
 const float PH_MIN_IDEAL = 6.5;
 const float PH_MAX_IDEAL = 8.5;
@@ -13,7 +16,13 @@ const float PH_MAX_IDEAL = 8.5;
 const int LUMINOSIDADE_MIN_IDEAL = 250;
 const int LUMINOSIDADE_MAX_IDEAL = 900;
 
+const float TEMP_MIN_IDEAL = 20.0;
+const float TEMP_MAX_IDEAL = 30.0;
+
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+OneWire oneWire(TEMP_PIN);
+DallasTemperature sensorTemperatura(&oneWire);
 
 float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, float saidaMax) {
   return (valor - entradaMin) * (saidaMax - saidaMin) / (entradaMax - entradaMin) + saidaMin;
@@ -27,13 +36,20 @@ float lerPH() {
 
 int lerLuminosidade() {
   int leituraADC = analogRead(LDR_PIN);
-
-  // Escala didática: 0 a 1000
   int luminosidade = map(leituraADC, 0, 4095, 0, 1000);
+  return constrain(luminosidade, 0, 1000);
+}
 
-  luminosidade = constrain(luminosidade, 0, 1000);
+float lerTemperatura() {
+  sensorTemperatura.requestTemperatures();
 
-  return luminosidade;
+  float temperatura = sensorTemperatura.getTempCByIndex(0);
+
+  if (temperatura == DEVICE_DISCONNECTED_C) {
+    return -99.0;
+  }
+
+  return temperatura;
 }
 
 void atualizarAtuadores(bool sistemaNormal) {
@@ -46,7 +62,7 @@ void atualizarAtuadores(bool sistemaNormal) {
   }
 }
 
-void atualizarDisplay(float ph, int luminosidade, bool phNormal, bool luzNormal) {
+void atualizarDisplay(float ph, int luminosidade, float temperatura, bool phNormal, bool luzNormal, bool tempNormal) {
   lcd.clear();
 
   lcd.setCursor(0, 0);
@@ -56,15 +72,18 @@ void atualizarDisplay(float ph, int luminosidade, bool phNormal, bool luzNormal)
   lcd.print(luminosidade);
 
   lcd.setCursor(0, 1);
+  lcd.print("T:");
+  lcd.print(temperatura, 1);
+  lcd.print(" ");
 
-  if (phNormal && luzNormal) {
-    lcd.print("STATUS: NORMAL");
-  } else if (!phNormal && !luzNormal) {
-    lcd.print("ALERTA PH/LUZ");
+  if (phNormal && luzNormal && tempNormal) {
+    lcd.print("NORMAL");
   } else if (!phNormal) {
     lcd.print("ALERTA PH");
-  } else {
+  } else if (!luzNormal) {
     lcd.print("ALERTA LUZ");
+  } else if (!tempNormal) {
+    lcd.print("ALERTA TEMP");
   }
 }
 
@@ -88,10 +107,12 @@ void setup() {
   lcd.init();
   lcd.backlight();
 
+  sensorTemperatura.begin();
+
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("IoT iniciado");
+  lcd.print("Temp adicionada");
 
   delay(2000);
 }
@@ -99,14 +120,16 @@ void setup() {
 void loop() {
   float ph = lerPH();
   int luminosidade = lerLuminosidade();
+  float temperatura = lerTemperatura();
 
   bool phNormal = ph >= PH_MIN_IDEAL && ph <= PH_MAX_IDEAL;
   bool luzNormal = luminosidade >= LUMINOSIDADE_MIN_IDEAL && luminosidade <= LUMINOSIDADE_MAX_IDEAL;
+  bool tempNormal = temperatura >= TEMP_MIN_IDEAL && temperatura <= TEMP_MAX_IDEAL;
 
-  bool sistemaNormal = phNormal && luzNormal;
+  bool sistemaNormal = phNormal && luzNormal && tempNormal;
 
   atualizarAtuadores(sistemaNormal);
-  atualizarDisplay(ph, luminosidade, phNormal, luzNormal);
+  atualizarDisplay(ph, luminosidade, temperatura, phNormal, luzNormal, tempNormal);
 
   delay(1000);
 }
