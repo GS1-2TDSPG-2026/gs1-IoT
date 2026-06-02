@@ -1,0 +1,5 @@
+.pio/
+.vscode/.browse_c_cpp.db*
+.vscode/ipch/
+*.log
+.DS_Store
