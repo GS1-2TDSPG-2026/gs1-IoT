@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "author": "Kelson",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 40,
+      "left": 120,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledRed",
+      "top": 20,
+      "left": 520,
+      "attrs": {
+        "color": "red"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledGreen",
+      "top": 100,
+      "left": 520,
+      "attrs": {
+        "color": "green"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rRed",
+      "top": 25,
+      "left": 420,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rGreen",
+      "top": 105,
+      "left": 420,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "potPH",
+      "top": 250,
+      "left": 480,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "potTurbidez",
+      "top": 430,
+      "left": 480,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-photoresistor-sensor",
+      "id": "ldr",
+      "top": 250,
+      "left": 720,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-ds18b20",
+      "id": "tempSensor",
+      "top": 430,
+      "left": 720,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servoColheita",
+      "top": 560,
+      "left": 520,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd",
+      "top": 340,
+      "left": 40,
+      "attrs": {
+        "pins": "i2c"
+      }
+    }
+  ],
+  "connections": [
+    ["esp:D25", "rRed:1", "green", []],
+    ["rRed:2", "ledRed:A", "green", []],
+    ["ledRed:C", "esp:GND.1", "black", []],
+
+    ["esp:D26", "rGreen:1", "green", []],
+    ["rGreen:2", "ledGreen:A", "green", []],
+    ["ledGreen:C", "esp:GND.2", "black", []],
+
+    ["potPH:SIG", "esp:D34", "blue", []],
+    ["potPH:VCC", "esp:3V3", "red", []],
+    ["potPH:GND", "esp:GND.1", "black", []],
+
+    ["potTurbidez:SIG", "esp:D32", "blue", []],
+    ["potTurbidez:VCC", "esp:3V3", "red", []],
+    ["potTurbidez:GND", "esp:GND.2", "black", []],
+
+    ["ldr:AO", "esp:D35", "blue", []],
+    ["ldr:VCC", "esp:3V3", "red", []],
+    ["ldr:GND", "esp:GND.2", "black", []],
+
+    ["tempSensor:DQ", "esp:D4", "green", []],
+    ["tempSensor:VCC", "esp:3V3", "red", []],
+    ["tempSensor:GND", "esp:GND.1", "black", []],
+
+    ["servoColheita:PWM", "esp:D27", "orange", []],
+    ["servoColheita:V+", "esp:5V", "red", []],
+    ["servoColheita:GND", "esp:GND.2", "black", []],
+
+    ["lcd:SDA", "esp:D21", "blue", []],
+    ["lcd:SCL", "esp:D22", "green", []],
+    ["lcd:VCC", "esp:5V", "red", []],
+    ["lcd:GND", "esp:GND.1", "black", []]
+  ],
+  "dependencies": {}
+}
