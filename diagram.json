@@ -75,6 +75,13 @@
       "attrs": {}
     },
     {
+      "type": "wokwi-servo",
+      "id": "servoColheita",
+      "top": 560,
+      "left": 520,
+      "attrs": {}
+    },
+    {
       "type": "wokwi-lcd1602",
       "id": "lcd",
       "top": 340,
@@ -108,6 +115,10 @@
     ["tempSensor:DQ", "esp:D4", "green", []],
     ["tempSensor:VCC", "esp:3V3", "red", []],
     ["tempSensor:GND", "esp:GND.1", "black", []],
+
+    ["servoColheita:PWM", "esp:D27", "orange", []],
+    ["servoColheita:V+", "esp:5V", "red", []],
+    ["servoColheita:GND", "esp:GND.2", "black", []],
 
     ["lcd:SDA", "esp:D21", "blue", []],
     ["lcd:SCL", "esp:D22", "green", []],

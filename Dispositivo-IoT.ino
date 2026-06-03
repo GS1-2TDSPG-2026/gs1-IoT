@@ -5,6 +5,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <ESP32Servo.h>
 
 // =====================
 // Wi-Fi Wokwi
@@ -20,9 +21,10 @@ const int MQTT_PORT = 1883;
 
 const char* MQTT_CLIENT_ID = "phycocarbon-esp32-tanque01";
 const char* MQTT_TOPIC_TELEMETRIA = "phycocarbon/fiap/tanque01/telemetria";
+const char* MQTT_TOPIC_COMANDOS = "phycocarbon/fiap/tanque01/comandos";
 
 // =====================
-// Identificação do dispositivo
+// Identificação
 // =====================
 const int DISPOSITIVO_ID = 10;
 
@@ -36,6 +38,19 @@ const int PH_PIN = 34;
 const int LDR_PIN = 35;
 const int TEMP_PIN = 4;
 const int TURBIDEZ_PIN = 32;
+const int SERVO_PIN = 27;
+
+// =====================
+// Servo
+// =====================
+// No SEU Wokwi:
+// 0 graus  = aberto / Colheita ON
+// 90 graus = fechado / Colheita OFF
+const int SERVO_ABERTO = 0;
+const int SERVO_FECHADO = 90;
+
+bool colheitaAutomaticaJaAcionada = false;
+bool servoManualAberto = false;
 
 // =====================
 // Faixas ideais
@@ -52,8 +67,11 @@ const float TEMP_MAX_IDEAL = 30.0;
 const int TURBIDEZ_MIN_IDEAL = 100;
 const int TURBIDEZ_MAX_IDEAL = 700;
 
+// Quando a turbidez chegar nesse ponto, simulamos biomassa pronta para colheita
+const int TURBIDEZ_COLHEITA = 650;
+
 // =====================
-// Tempo de publicação MQTT
+// Tempo
 // =====================
 const unsigned long INTERVALO_PUBLICACAO_MS = 5000;
 unsigned long ultimaPublicacao = 0;
@@ -69,6 +87,8 @@ DallasTemperature sensorTemperatura(&oneWire);
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
+Servo servoColheita;
+
 // =====================
 // Funções auxiliares
 // =====================
@@ -78,6 +98,39 @@ float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, 
 
 float arredondar1Casa(float valor) {
   return round(valor * 10.0) / 10.0;
+}
+
+// =====================
+// Servo
+// =====================
+void abrirServoColheita() {
+  servoColheita.write(SERVO_ABERTO);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Servo aberto");
+  lcd.setCursor(0, 1);
+  lcd.print("Colheita ON");
+
+  delay(1500);
+}
+
+void fecharServoColheita() {
+  servoColheita.write(SERVO_FECHADO);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Servo fechado");
+  lcd.setCursor(0, 1);
+  lcd.print("Colheita OFF");
+
+  delay(1000);
+}
+
+void acionarColheitaTemporaria() {
+  abrirServoColheita();
+  delay(1500);
+  fecharServoColheita();
 }
 
 // =====================
@@ -119,6 +172,50 @@ void conectarWiFi() {
 }
 
 // =====================
+// MQTT Callback
+// =====================
+void receberComandoMQTT(char* topic, byte* payload, unsigned int length) {
+  String comando = "";
+
+  for (unsigned int i = 0; i < length; i++) {
+    comando += (char)payload[i];
+  }
+
+  comando.trim();
+  comando.toUpperCase();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Cmd MQTT:");
+  lcd.setCursor(0, 1);
+  lcd.print(comando);
+
+  delay(1000);
+
+  if (comando == "COLHER") {
+    servoManualAberto = false;
+    acionarColheitaTemporaria();
+  } 
+  else if (comando == "SERVO_ABRIR") {
+    servoManualAberto = true;
+    abrirServoColheita();
+  } 
+  else if (comando == "SERVO_FECHAR") {
+    servoManualAberto = false;
+    fecharServoColheita();
+  } 
+  else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Comando");
+    lcd.setCursor(0, 1);
+    lcd.print("desconhecido");
+
+    delay(1000);
+  }
+}
+
+// =====================
 // MQTT
 // =====================
 void conectarMQTT() {
@@ -138,11 +235,13 @@ void conectarMQTT() {
     bool conectado = mqttClient.connect(MQTT_CLIENT_ID);
 
     if (conectado) {
+      mqttClient.subscribe(MQTT_TOPIC_COMANDOS);
+
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("MQTT conectado");
       lcd.setCursor(0, 1);
-      lcd.print("HiveMQ OK");
+      lcd.print("Sub comandos OK");
 
       delay(2000);
     } else {
@@ -216,7 +315,8 @@ void atualizarDisplay(
   bool phNormal,
   bool luzNormal,
   bool tempNormal,
-  bool turbidezNormal
+  bool turbidezNormal,
+  bool prontoColheita
 ) {
   lcd.clear();
 
@@ -228,18 +328,28 @@ void atualizarDisplay(
 
   lcd.setCursor(0, 1);
 
-  if (phNormal && luzNormal && tempNormal && turbidezNormal) {
+  if (servoManualAberto) {
+    lcd.print("SERVO MANUAL ON");
+  } 
+  else if (prontoColheita) {
+    lcd.print("PRONTO COLHEITA");
+  } 
+  else if (phNormal && luzNormal && tempNormal && turbidezNormal) {
     lcd.print("L:");
     lcd.print(luminosidade);
     lcd.print(" Tu:");
     lcd.print(turbidez);
-  } else if (!phNormal) {
+  } 
+  else if (!phNormal) {
     lcd.print("ALERTA PH");
-  } else if (!luzNormal) {
+  } 
+  else if (!luzNormal) {
     lcd.print("ALERTA LUZ");
-  } else if (!tempNormal) {
+  } 
+  else if (!tempNormal) {
     lcd.print("ALERTA TEMP");
-  } else if (!turbidezNormal) {
+  } 
+  else if (!turbidezNormal) {
     lcd.print("ALERTA TURB");
   }
 }
@@ -247,20 +357,22 @@ void atualizarDisplay(
 // =====================
 // Publicação MQTT JSON
 // =====================
-void publicarTelemetria(float ph, int luminosidade, float temperatura, int turbidez) {
-  StaticJsonDocument<256> doc;
+void publicarTelemetria(float ph, int luminosidade, float temperatura, int turbidez, bool prontoColheita) {
+  StaticJsonDocument<320> doc;
 
   doc["dispositivo_id"] = DISPOSITIVO_ID;
   doc["pH"] = arredondar1Casa(ph);
   doc["temp"] = arredondar1Casa(temperatura);
   doc["turbidez"] = arredondar1Casa(turbidez);
   doc["luminosidade"] = luminosidade;
+  doc["pronto_colheita"] = prontoColheita;
+  doc["servo_aberto"] = servoManualAberto;
 
-  char payload[256];
+  char payload[320];
   serializeJson(doc, payload);
 
   Serial.print("JSON enviado via MQTT: ");
-  Serial.println(payload);  
+  Serial.println(payload);
 
   bool publicado = mqttClient.publish(MQTT_TOPIC_TELEMETRIA, payload);
 
@@ -307,16 +419,22 @@ void setup() {
 
   sensorTemperatura.begin();
 
+  servoColheita.attach(SERVO_PIN);
+
+  // Inicia fechado.
+  servoColheita.write(SERVO_FECHADO);
+
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("JSON MQTT");
+  lcd.print("Servo + MQTT");
 
   delay(1500);
 
   conectarWiFi();
 
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(receberComandoMQTT);
   mqttClient.setBufferSize(512);
 
   conectarMQTT();
@@ -348,14 +466,45 @@ void loop() {
 
   bool sistemaNormal = phNormal && luzNormal && tempNormal && turbidezNormal;
 
+  bool prontoColheita =
+    sistemaNormal &&
+    turbidez >= TURBIDEZ_COLHEITA &&
+    turbidez <= TURBIDEZ_MAX_IDEAL;
+
   atualizarAtuadores(sistemaNormal);
-  atualizarDisplay(ph, luminosidade, temperatura, turbidez, phNormal, luzNormal, tempNormal, turbidezNormal);
+
+  atualizarDisplay(
+    ph,
+    luminosidade,
+    temperatura,
+    turbidez,
+    phNormal,
+    luzNormal,
+    tempNormal,
+    turbidezNormal,
+    prontoColheita
+  );
+
+  // Colheita automática: aciona uma vez quando entra na faixa.
+  if (prontoColheita && !colheitaAutomaticaJaAcionada && !servoManualAberto) {
+    acionarColheitaTemporaria();
+    colheitaAutomaticaJaAcionada = true;
+  }
+
+  // Quando sai da faixa de colheita, libera nova ativação automática.
+  if (!prontoColheita) {
+    colheitaAutomaticaJaAcionada = false;
+
+    if (!servoManualAberto) {
+      servoColheita.write(SERVO_FECHADO);
+    }
+  }
 
   unsigned long agora = millis();
 
   if (agora - ultimaPublicacao >= INTERVALO_PUBLICACAO_MS) {
     ultimaPublicacao = agora;
-    publicarTelemetria(ph, luminosidade, temperatura, turbidez);
+    publicarTelemetria(ph, luminosidade, temperatura, turbidez, prontoColheita);
   }
 
   delay(1000);
