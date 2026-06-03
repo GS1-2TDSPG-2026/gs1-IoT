@@ -1,12 +1,28 @@
 #include <WiFi.h>
+#include <PubSubClient.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
+// =====================
+// Wi-Fi Wokwi
+// =====================
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASSWORD = "";
 
+// =====================
+// MQTT
+// =====================
+const char* MQTT_BROKER = "broker.hivemq.com";
+const int MQTT_PORT = 1883;
+
+const char* MQTT_CLIENT_ID = "phycocarbon-esp32-tanque01";
+const char* MQTT_TOPIC_TELEMETRIA = "phycocarbon/fiap/tanque01/telemetria";
+
+// =====================
+// Pinos
+// =====================
 const int LED_VERMELHO_PIN = 25;
 const int LED_VERDE_PIN = 26;
 
@@ -15,6 +31,9 @@ const int LDR_PIN = 35;
 const int TEMP_PIN = 4;
 const int TURBIDEZ_PIN = 32;
 
+// =====================
+// Faixas ideais
+// =====================
 const float PH_MIN_IDEAL = 6.5;
 const float PH_MAX_IDEAL = 8.5;
 
@@ -27,15 +46,27 @@ const float TEMP_MAX_IDEAL = 30.0;
 const int TURBIDEZ_MIN_IDEAL = 100;
 const int TURBIDEZ_MAX_IDEAL = 700;
 
+// =====================
+// Objetos
+// =====================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 OneWire oneWire(TEMP_PIN);
 DallasTemperature sensorTemperatura(&oneWire);
 
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+// =====================
+// Funções auxiliares
+// =====================
 float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, float saidaMax) {
   return (valor - entradaMin) * (saidaMax - saidaMin) / (entradaMax - entradaMin) + saidaMin;
 }
 
+// =====================
+// Wi-Fi
+// =====================
 void conectarWiFi() {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -68,7 +99,7 @@ void conectarWiFi() {
     lcd.setCursor(0, 1);
     lcd.print(WiFi.localIP());
 
-    delay(2500);
+    delay(2000);
   } else {
     Serial.println();
     Serial.println("Falha ao conectar WiFi.");
@@ -79,10 +110,65 @@ void conectarWiFi() {
     lcd.setCursor(0, 1);
     lcd.print("Verifique rede");
 
-    delay(2500);
+    delay(2000);
   }
 }
 
+// =====================
+// MQTT
+// =====================
+void conectarMQTT() {
+  if (mqttClient.connected()) {
+    return;
+  }
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Conectando");
+  lcd.setCursor(0, 1);
+  lcd.print("MQTT...");
+
+  Serial.print("Conectando ao MQTT: ");
+  Serial.println(MQTT_BROKER);
+
+  int tentativas = 0;
+
+  while (!mqttClient.connected() && tentativas < 10) {
+    bool conectado = mqttClient.connect(MQTT_CLIENT_ID);
+
+    if (conectado) {
+      Serial.println("MQTT conectado!");
+
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("MQTT conectado");
+      lcd.setCursor(0, 1);
+      lcd.print("HiveMQ OK");
+
+      delay(2000);
+    } else {
+      Serial.print("Falha MQTT. Estado: ");
+      Serial.println(mqttClient.state());
+
+      tentativas++;
+      delay(1000);
+    }
+  }
+
+  if (!mqttClient.connected()) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Falha MQTT");
+    lcd.setCursor(0, 1);
+    lcd.print("Broker offline");
+
+    delay(2000);
+  }
+}
+
+// =====================
+// Sensores
+// =====================
 float lerPH() {
   int leituraADC = analogRead(PH_PIN);
   float ph = mapFloat(leituraADC, 0, 4095, 0.0, 14.0);
@@ -113,6 +199,9 @@ int lerTurbidez() {
   return constrain(turbidez, 0, 1000);
 }
 
+// =====================
+// Atuadores e display
+// =====================
 void atualizarAtuadores(bool sistemaNormal) {
   if (sistemaNormal) {
     digitalWrite(LED_VERDE_PIN, HIGH);
@@ -159,6 +248,9 @@ void atualizarDisplay(
   }
 }
 
+// =====================
+// Setup
+// =====================
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -185,17 +277,30 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("Iniciando WiFi");
+  lcd.print("IoT + MQTT");
 
   delay(1500);
 
   conectarWiFi();
+
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+
+  conectarMQTT();
 }
 
+// =====================
+// Loop
+// =====================
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     conectarWiFi();
   }
+
+  if (!mqttClient.connected()) {
+    conectarMQTT();
+  }
+
+  mqttClient.loop();
 
   float ph = lerPH();
   int luminosidade = lerLuminosidade();
