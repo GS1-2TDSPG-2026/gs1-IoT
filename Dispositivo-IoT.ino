@@ -259,6 +259,9 @@ void publicarTelemetria(float ph, int luminosidade, float temperatura, int turbi
   char payload[256];
   serializeJson(doc, payload);
 
+  Serial.print("JSON enviado via MQTT: ");
+  Serial.println(payload);  
+
   bool publicado = mqttClient.publish(MQTT_TOPIC_TELEMETRIA, payload);
 
   lcd.clear();
