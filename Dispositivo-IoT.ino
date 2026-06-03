@@ -43,7 +43,7 @@ const int SERVO_PIN = 27;
 // =====================
 // Servo
 // =====================
-// No SEU Wokwi:
+// No seu Wokwi:
 // 0 graus  = aberto / Colheita ON
 // 90 graus = fechado / Colheita OFF
 const int SERVO_ABERTO = 0;
@@ -51,6 +51,7 @@ const int SERVO_FECHADO = 90;
 
 bool colheitaAutomaticaJaAcionada = false;
 bool servoManualAberto = false;
+bool servoAbertoAtual = false;
 
 // =====================
 // Faixas ideais
@@ -64,10 +65,9 @@ const int LUMINOSIDADE_MAX_IDEAL = 900;
 const float TEMP_MIN_IDEAL = 20.0;
 const float TEMP_MAX_IDEAL = 30.0;
 
+// Turbidez baixa demais = alerta.
+// Turbidez alta = biomassa densa, pronta para colheita.
 const int TURBIDEZ_MIN_IDEAL = 100;
-const int TURBIDEZ_MAX_IDEAL = 700;
-
-// Quando a turbidez chegar nesse ponto, simulamos biomassa pronta para colheita
 const int TURBIDEZ_COLHEITA = 650;
 
 // =====================
@@ -105,6 +105,7 @@ float arredondar1Casa(float valor) {
 // =====================
 void abrirServoColheita() {
   servoColheita.write(SERVO_ABERTO);
+  servoAbertoAtual = true;
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -117,6 +118,7 @@ void abrirServoColheita() {
 
 void fecharServoColheita() {
   servoColheita.write(SERVO_FECHADO);
+  servoAbertoAtual = false;
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -295,6 +297,39 @@ int lerTurbidez() {
 }
 
 // =====================
+// Status operacional
+// =====================
+String obterStatusTanque(
+  bool phNormal,
+  bool luzNormal,
+  bool tempNormal,
+  bool turbidezBaixa,
+  bool prontoColheita
+) {
+  if (!phNormal) {
+    return "ALERTA_PH";
+  }
+
+  if (!tempNormal) {
+    return "ALERTA_TEMP";
+  }
+
+  if (!luzNormal) {
+    return "ALERTA_LUZ";
+  }
+
+  if (turbidezBaixa) {
+    return "TURBIDEZ_BAIXA";
+  }
+
+  if (prontoColheita) {
+    return "PRONTO_COLHEITA";
+  }
+
+  return "NORMAL";
+}
+
+// =====================
 // Atuadores e display
 // =====================
 void atualizarAtuadores(bool sistemaNormal) {
@@ -312,11 +347,7 @@ void atualizarDisplay(
   int luminosidade,
   float temperatura,
   int turbidez,
-  bool phNormal,
-  bool luzNormal,
-  bool tempNormal,
-  bool turbidezNormal,
-  bool prontoColheita
+  String statusTanque
 ) {
   lcd.clear();
 
@@ -331,44 +362,52 @@ void atualizarDisplay(
   if (servoManualAberto) {
     lcd.print("SERVO MANUAL ON");
   } 
-  else if (prontoColheita) {
-    lcd.print("PRONTO COLHEITA");
-  } 
-  else if (phNormal && luzNormal && tempNormal && turbidezNormal) {
+  else if (statusTanque == "NORMAL") {
     lcd.print("L:");
     lcd.print(luminosidade);
     lcd.print(" Tu:");
     lcd.print(turbidez);
   } 
-  else if (!phNormal) {
+  else if (statusTanque == "PRONTO_COLHEITA") {
+    lcd.print("PRONTO COLHEITA");
+  } 
+  else if (statusTanque == "ALERTA_PH") {
     lcd.print("ALERTA PH");
   } 
-  else if (!luzNormal) {
-    lcd.print("ALERTA LUZ");
-  } 
-  else if (!tempNormal) {
+  else if (statusTanque == "ALERTA_TEMP") {
     lcd.print("ALERTA TEMP");
   } 
-  else if (!turbidezNormal) {
-    lcd.print("ALERTA TURB");
+  else if (statusTanque == "ALERTA_LUZ") {
+    lcd.print("ALERTA LUZ");
+  } 
+  else if (statusTanque == "TURBIDEZ_BAIXA") {
+    lcd.print("TURBIDEZ BAIXA");
   }
 }
 
 // =====================
 // Publicação MQTT JSON
 // =====================
-void publicarTelemetria(float ph, int luminosidade, float temperatura, int turbidez, bool prontoColheita) {
-  StaticJsonDocument<320> doc;
+void publicarTelemetria(
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
+  String statusTanque,
+  bool prontoColheita
+) {
+  StaticJsonDocument<384> doc;
 
   doc["dispositivo_id"] = DISPOSITIVO_ID;
   doc["pH"] = arredondar1Casa(ph);
   doc["temp"] = arredondar1Casa(temperatura);
   doc["turbidez"] = arredondar1Casa(turbidez);
   doc["luminosidade"] = luminosidade;
+  doc["status"] = statusTanque;
   doc["pronto_colheita"] = prontoColheita;
-  doc["servo_aberto"] = servoManualAberto;
+  doc["servo_aberto"] = servoAbertoAtual;
 
-  char payload[320];
+  char payload[384];
   serializeJson(doc, payload);
 
   Serial.print("JSON enviado via MQTT: ");
@@ -382,7 +421,7 @@ void publicarTelemetria(float ph, int luminosidade, float temperatura, int turbi
     lcd.setCursor(0, 0);
     lcd.print("MQTT publicado");
     lcd.setCursor(0, 1);
-    lcd.print("Telemetria OK");
+    lcd.print(statusTanque);
   } else {
     lcd.setCursor(0, 0);
     lcd.print("Falha publish");
@@ -423,11 +462,12 @@ void setup() {
 
   // Inicia fechado.
   servoColheita.write(SERVO_FECHADO);
+  servoAbertoAtual = false;
 
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("Servo + MQTT");
+  lcd.print("MQTT Status");
 
   delay(1500);
 
@@ -462,28 +502,28 @@ void loop() {
   bool phNormal = ph >= PH_MIN_IDEAL && ph <= PH_MAX_IDEAL;
   bool luzNormal = luminosidade >= LUMINOSIDADE_MIN_IDEAL && luminosidade <= LUMINOSIDADE_MAX_IDEAL;
   bool tempNormal = temperatura >= TEMP_MIN_IDEAL && temperatura <= TEMP_MAX_IDEAL;
-  bool turbidezNormal = turbidez >= TURBIDEZ_MIN_IDEAL && turbidez <= TURBIDEZ_MAX_IDEAL;
 
-  bool sistemaNormal = phNormal && luzNormal && tempNormal && turbidezNormal;
+  bool turbidezBaixa = turbidez < TURBIDEZ_MIN_IDEAL;
 
   bool prontoColheita =
-    sistemaNormal &&
-    turbidez >= TURBIDEZ_COLHEITA &&
-    turbidez <= TURBIDEZ_MAX_IDEAL;
+    phNormal &&
+    luzNormal &&
+    tempNormal &&
+    turbidez >= TURBIDEZ_COLHEITA;
 
-  atualizarAtuadores(sistemaNormal);
+  bool turbidezNormal = !turbidezBaixa;
+  bool sistemaNormal = phNormal && luzNormal && tempNormal && turbidezNormal;
 
-  atualizarDisplay(
-    ph,
-    luminosidade,
-    temperatura,
-    turbidez,
+  String statusTanque = obterStatusTanque(
     phNormal,
     luzNormal,
     tempNormal,
-    turbidezNormal,
+    turbidezBaixa,
     prontoColheita
   );
+
+  atualizarAtuadores(sistemaNormal);
+  atualizarDisplay(ph, luminosidade, temperatura, turbidez, statusTanque);
 
   // Colheita automática: aciona uma vez quando entra na faixa.
   if (prontoColheita && !colheitaAutomaticaJaAcionada && !servoManualAberto) {
@@ -497,6 +537,7 @@ void loop() {
 
     if (!servoManualAberto) {
       servoColheita.write(SERVO_FECHADO);
+      servoAbertoAtual = false;
     }
   }
 
@@ -504,7 +545,14 @@ void loop() {
 
   if (agora - ultimaPublicacao >= INTERVALO_PUBLICACAO_MS) {
     ultimaPublicacao = agora;
-    publicarTelemetria(ph, luminosidade, temperatura, turbidez, prontoColheita);
+    publicarTelemetria(
+      ph,
+      luminosidade,
+      temperatura,
+      turbidez,
+      statusTanque,
+      prontoColheita
+    );
   }
 
   delay(1000);
