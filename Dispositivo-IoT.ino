@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <OneWire.h>
@@ -19,6 +20,11 @@ const int MQTT_PORT = 1883;
 
 const char* MQTT_CLIENT_ID = "phycocarbon-esp32-tanque01";
 const char* MQTT_TOPIC_TELEMETRIA = "phycocarbon/fiap/tanque01/telemetria";
+
+// =====================
+// Identificação do dispositivo
+// =====================
+const int DISPOSITIVO_ID = 10;
 
 // =====================
 // Pinos
@@ -47,6 +53,12 @@ const int TURBIDEZ_MIN_IDEAL = 100;
 const int TURBIDEZ_MAX_IDEAL = 700;
 
 // =====================
+// Tempo de publicação MQTT
+// =====================
+const unsigned long INTERVALO_PUBLICACAO_MS = 5000;
+unsigned long ultimaPublicacao = 0;
+
+// =====================
 // Objetos
 // =====================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -64,6 +76,10 @@ float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, 
   return (valor - entradaMin) * (saidaMax - saidaMin) / (entradaMax - entradaMin) + saidaMin;
 }
 
+float arredondar1Casa(float valor) {
+  return round(valor * 10.0) / 10.0;
+}
+
 // =====================
 // Wi-Fi
 // =====================
@@ -74,25 +90,16 @@ void conectarWiFi() {
   lcd.setCursor(0, 1);
   lcd.print("WiFi...");
 
-  Serial.print("Conectando ao WiFi: ");
-  Serial.println(WIFI_SSID);
-
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int tentativas = 0;
 
   while (WiFi.status() != WL_CONNECTED && tentativas < 30) {
     delay(500);
-    Serial.print(".");
     tentativas++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println();
-    Serial.println("WiFi conectado!");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("WiFi conectado");
@@ -101,9 +108,6 @@ void conectarWiFi() {
 
     delay(2000);
   } else {
-    Serial.println();
-    Serial.println("Falha ao conectar WiFi.");
-
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Falha WiFi");
@@ -128,17 +132,12 @@ void conectarMQTT() {
   lcd.setCursor(0, 1);
   lcd.print("MQTT...");
 
-  Serial.print("Conectando ao MQTT: ");
-  Serial.println(MQTT_BROKER);
-
   int tentativas = 0;
 
   while (!mqttClient.connected() && tentativas < 10) {
     bool conectado = mqttClient.connect(MQTT_CLIENT_ID);
 
     if (conectado) {
-      Serial.println("MQTT conectado!");
-
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("MQTT conectado");
@@ -147,9 +146,6 @@ void conectarMQTT() {
 
       delay(2000);
     } else {
-      Serial.print("Falha MQTT. Estado: ");
-      Serial.println(mqttClient.state());
-
       tentativas++;
       delay(1000);
     }
@@ -249,6 +245,40 @@ void atualizarDisplay(
 }
 
 // =====================
+// Publicação MQTT JSON
+// =====================
+void publicarTelemetria(float ph, int luminosidade, float temperatura, int turbidez) {
+  StaticJsonDocument<256> doc;
+
+  doc["dispositivo_id"] = DISPOSITIVO_ID;
+  doc["pH"] = arredondar1Casa(ph);
+  doc["temp"] = arredondar1Casa(temperatura);
+  doc["turbidez"] = arredondar1Casa(turbidez);
+  doc["luminosidade"] = luminosidade;
+
+  char payload[256];
+  serializeJson(doc, payload);
+
+  bool publicado = mqttClient.publish(MQTT_TOPIC_TELEMETRIA, payload);
+
+  lcd.clear();
+
+  if (publicado) {
+    lcd.setCursor(0, 0);
+    lcd.print("MQTT publicado");
+    lcd.setCursor(0, 1);
+    lcd.print("Telemetria OK");
+  } else {
+    lcd.setCursor(0, 0);
+    lcd.print("Falha publish");
+    lcd.setCursor(0, 1);
+    lcd.print("MQTT erro");
+  }
+
+  delay(1000);
+}
+
+// =====================
 // Setup
 // =====================
 void setup() {
@@ -277,13 +307,14 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("IoT + MQTT");
+  lcd.print("JSON MQTT");
 
   delay(1500);
 
   conectarWiFi();
 
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setBufferSize(512);
 
   conectarMQTT();
 }
@@ -316,6 +347,13 @@ void loop() {
 
   atualizarAtuadores(sistemaNormal);
   atualizarDisplay(ph, luminosidade, temperatura, turbidez, phNormal, luzNormal, tempNormal, turbidezNormal);
+
+  unsigned long agora = millis();
+
+  if (agora - ultimaPublicacao >= INTERVALO_PUBLICACAO_MS) {
+    ultimaPublicacao = agora;
+    publicarTelemetria(ph, luminosidade, temperatura, turbidez);
+  }
 
   delay(1000);
 }
