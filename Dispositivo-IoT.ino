@@ -19,9 +19,11 @@ const char* WIFI_PASSWORD = "";
 const char* MQTT_BROKER = "broker.hivemq.com";
 const int MQTT_PORT = 1883;
 
-const char* MQTT_CLIENT_ID = "phycocarbon-esp32-tanque01";
+const char* MQTT_CLIENT_ID_BASE = "phycocarbon-esp32-tanque01";
+
 const char* MQTT_TOPIC_TELEMETRIA = "phycocarbon/fiap/tanque01/telemetria";
 const char* MQTT_TOPIC_COMANDOS = "phycocarbon/fiap/tanque01/comandos";
+const char* MQTT_TOPIC_ALERTAS = "phycocarbon/fiap/tanque01/alertas";
 
 // =====================
 // Identificação
@@ -52,6 +54,9 @@ const int SERVO_FECHADO = 90;
 bool colheitaAutomaticaJaAcionada = false;
 bool servoManualAberto = false;
 bool servoAbertoAtual = false;
+
+// Evita publicar o mesmo alerta repetidamente a cada loop
+String ultimoAlertaPublicado = "";
 
 // =====================
 // Faixas ideais
@@ -234,7 +239,9 @@ void conectarMQTT() {
   int tentativas = 0;
 
   while (!mqttClient.connected() && tentativas < 10) {
-    bool conectado = mqttClient.connect(MQTT_CLIENT_ID);
+    String clientId = String(MQTT_CLIENT_ID_BASE) + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+
+    bool conectado = mqttClient.connect(clientId.c_str());
 
     if (conectado) {
       mqttClient.subscribe(MQTT_TOPIC_COMANDOS);
@@ -243,7 +250,7 @@ void conectarMQTT() {
       lcd.setCursor(0, 0);
       lcd.print("MQTT conectado");
       lcd.setCursor(0, 1);
-      lcd.print("Sub comandos OK");
+      lcd.print("3 topicos OK");
 
       delay(2000);
     } else {
@@ -329,6 +336,30 @@ String obterStatusTanque(
   return "NORMAL";
 }
 
+String obterMensagemAlerta(String statusTanque) {
+  if (statusTanque == "ALERTA_PH") {
+    return "pH fora da faixa ideal do biofotorreator";
+  }
+
+  if (statusTanque == "ALERTA_TEMP") {
+    return "Temperatura da agua fora da faixa ideal";
+  }
+
+  if (statusTanque == "ALERTA_LUZ") {
+    return "Luminosidade local fora da faixa ideal";
+  }
+
+  if (statusTanque == "TURBIDEZ_BAIXA") {
+    return "Turbidez abaixo do minimo esperado";
+  }
+
+  if (statusTanque == "PRONTO_COLHEITA") {
+    return "Biomassa atingiu turbidez ideal para colheita";
+  }
+
+  return "Sistema operando normalmente";
+}
+
 // =====================
 // Atuadores e display
 // =====================
@@ -386,7 +417,66 @@ void atualizarDisplay(
 }
 
 // =====================
-// Publicação MQTT JSON
+// MQTT - Publicação de alertas
+// =====================
+void publicarAlerta(
+  String statusTanque,
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
+  bool prontoColheita
+) {
+  StaticJsonDocument<384> doc;
+
+  doc["dispositivo_id"] = DISPOSITIVO_ID;
+  doc["tipo"] = statusTanque;
+  doc["mensagem"] = obterMensagemAlerta(statusTanque);
+  doc["pH"] = arredondar1Casa(ph);
+  doc["temp"] = arredondar1Casa(temperatura);
+  doc["turbidez"] = turbidez;
+  doc["luminosidade"] = luminosidade;
+  doc["pronto_colheita"] = prontoColheita;
+  doc["servo_aberto"] = servoAbertoAtual;
+
+  char payload[384];
+  serializeJson(doc, payload);
+
+  Serial.print("ALERTA enviado via MQTT: ");
+  Serial.println(payload);
+
+  mqttClient.publish(MQTT_TOPIC_ALERTAS, payload);
+}
+
+void verificarEPublicarAlerta(
+  String statusTanque,
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
+  bool prontoColheita
+) {
+  if (statusTanque == "NORMAL") {
+    ultimoAlertaPublicado = "";
+    return;
+  }
+
+  if (statusTanque != ultimoAlertaPublicado) {
+    publicarAlerta(
+      statusTanque,
+      ph,
+      luminosidade,
+      temperatura,
+      turbidez,
+      prontoColheita
+    );
+
+    ultimoAlertaPublicado = statusTanque;
+  }
+}
+
+// =====================
+// MQTT - Publicação de telemetria
 // =====================
 void publicarTelemetria(
   float ph,
@@ -401,7 +491,7 @@ void publicarTelemetria(
   doc["dispositivo_id"] = DISPOSITIVO_ID;
   doc["pH"] = arredondar1Casa(ph);
   doc["temp"] = arredondar1Casa(temperatura);
-  doc["turbidez"] = arredondar1Casa(turbidez);
+  doc["turbidez"] = turbidez;
   doc["luminosidade"] = luminosidade;
   doc["status"] = statusTanque;
   doc["pronto_colheita"] = prontoColheita;
@@ -410,7 +500,7 @@ void publicarTelemetria(
   char payload[384];
   serializeJson(doc, payload);
 
-  Serial.print("JSON enviado via MQTT: ");
+  Serial.print("TELEMETRIA enviada via MQTT: ");
   Serial.println(payload);
 
   bool publicado = mqttClient.publish(MQTT_TOPIC_TELEMETRIA, payload);
@@ -467,7 +557,7 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Phycocarbon");
   lcd.setCursor(0, 1);
-  lcd.print("MQTT Status");
+  lcd.print("3 topicos MQTT");
 
   delay(1500);
 
@@ -525,6 +615,15 @@ void loop() {
   atualizarAtuadores(sistemaNormal);
   atualizarDisplay(ph, luminosidade, temperatura, turbidez, statusTanque);
 
+  verificarEPublicarAlerta(
+    statusTanque,
+    ph,
+    luminosidade,
+    temperatura,
+    turbidez,
+    prontoColheita
+  );
+
   // Colheita automática: aciona uma vez quando entra na faixa.
   if (prontoColheita && !colheitaAutomaticaJaAcionada && !servoManualAberto) {
     acionarColheitaTemporaria();
@@ -545,6 +644,7 @@ void loop() {
 
   if (agora - ultimaPublicacao >= INTERVALO_PUBLICACAO_MS) {
     ultimaPublicacao = agora;
+
     publicarTelemetria(
       ph,
       luminosidade,
