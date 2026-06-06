@@ -19,15 +19,20 @@ const char* WIFI_PASSWORD = "";
 const char* MQTT_BROKER = "broker.hivemq.com";
 const int MQTT_PORT = 1883;
 
-const char* MQTT_CLIENT_ID_BASE = "phycocarbon-esp32-tanque01";
+const char* MQTT_CLIENT_ID_BASE = "algaspace-esp32-fazenda5-tanque10";
 
-const char* MQTT_TOPIC_TELEMETRIA = "phycocarbon/fiap/tanque01/telemetria";
-const char* MQTT_TOPIC_COMANDOS = "phycocarbon/fiap/tanque01/comandos";
-const char* MQTT_TOPIC_ALERTAS = "phycocarbon/fiap/tanque01/alertas";
+// IMPORTANTE:
+// O topico de metricas esta alinhado com o banco:
+// TB_DISPOSITIVO_IOT.topico_mqtt = algaspace/fazenda/5/tanque/10/metricas
+const char* MQTT_TOPIC_TELEMETRIA = "algaspace/fazenda/5/tanque/10/metricas";
+const char* MQTT_TOPIC_COMANDOS   = "algaspace/fazenda/5/tanque/10/comandos";
+const char* MQTT_TOPIC_ALERTAS    = "algaspace/fazenda/5/tanque/10/alertas";
 
 // =====================
-// Identificação
+// Identificação alinhada com o banco
 // =====================
+const int FAZENDA_ID = 5;
+const int TANQUE_ID = 10;
 const int DISPOSITIVO_ID = 10;
 
 // =====================
@@ -45,7 +50,7 @@ const int SERVO_PIN = 27;
 // =====================
 // Servo
 // =====================
-// No seu Wokwi:
+// No Wokwi:
 // 0 graus  = aberto / Colheita ON
 // 90 graus = fechado / Colheita OFF
 const int SERVO_ABERTO = 0;
@@ -59,16 +64,21 @@ bool servoAbertoAtual = false;
 String ultimoAlertaPublicado = "";
 
 // =====================
-// Faixas ideais
+// Faixas ideais alinhadas com o tanque 10 do banco
+// TB_TANQUE id_tanque = 10
+// Chlorella vulgaris
+// pH: 6.50 ate 8.50
+// temperatura: 18.0 ate 28.0
 // =====================
 const float PH_MIN_IDEAL = 6.5;
 const float PH_MAX_IDEAL = 8.5;
 
-const int LUMINOSIDADE_MIN_IDEAL = 250;
-const int LUMINOSIDADE_MAX_IDEAL = 900;
+const float TEMP_MIN_IDEAL = 18.0;
+const float TEMP_MAX_IDEAL = 28.0;
 
-const float TEMP_MIN_IDEAL = 20.0;
-const float TEMP_MAX_IDEAL = 30.0;
+// Luminosidade simulada em lux para combinar melhor com a coluna do banco
+const int LUMINOSIDADE_MIN_IDEAL = 3000;
+const int LUMINOSIDADE_MAX_IDEAL = 15000;
 
 // Turbidez baixa demais = alerta.
 // Turbidez alta = biomassa densa, pronta para colheita.
@@ -103,6 +113,16 @@ float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, 
 
 float arredondar1Casa(float valor) {
   return round(valor * 10.0) / 10.0;
+}
+
+bool ehAlertaCritico(String statusTanque) {
+  return statusTanque == "PH_BAIXO" ||
+         statusTanque == "PH_ALTO" ||
+         statusTanque == "PH_CRITICO" ||
+         statusTanque == "TEMPERATURA_ALTA" ||
+         statusTanque == "TEMPERATURA_BAIXA" ||
+         statusTanque == "TURBIDEZ_FORA_PADRAO" ||
+         statusTanque == "LUMINOSIDADE_BAIXA";
 }
 
 // =====================
@@ -180,12 +200,30 @@ void conectarWiFi() {
 
 // =====================
 // MQTT Callback
+// Aceita comando em texto puro:
+// COLHER
+// SERVO_ABRIR
+// SERVO_FECHAR
+//
+// E também aceita JSON:
+// { "comando": "COLHER" }
 // =====================
 void receberComandoMQTT(char* topic, byte* payload, unsigned int length) {
-  String comando = "";
+  String mensagem = "";
 
   for (unsigned int i = 0; i < length; i++) {
-    comando += (char)payload[i];
+    mensagem += (char)payload[i];
+  }
+
+  mensagem.trim();
+
+  String comando = mensagem;
+
+  StaticJsonDocument<256> doc;
+  DeserializationError erro = deserializeJson(doc, mensagem);
+
+  if (!erro && doc["comando"]) {
+    comando = doc["comando"].as<String>();
   }
 
   comando.trim();
@@ -199,18 +237,18 @@ void receberComandoMQTT(char* topic, byte* payload, unsigned int length) {
 
   delay(1000);
 
-  if (comando == "COLHER") {
+  if (comando == "COLHER" || comando == "LIGAR_BOMBA") {
     servoManualAberto = false;
     acionarColheitaTemporaria();
-  } 
-  else if (comando == "SERVO_ABRIR") {
+  }
+  else if (comando == "SERVO_ABRIR" || comando == "ABRIR") {
     servoManualAberto = true;
     abrirServoColheita();
-  } 
-  else if (comando == "SERVO_FECHAR") {
+  }
+  else if (comando == "SERVO_FECHAR" || comando == "FECHAR") {
     servoManualAberto = false;
     fecharServoColheita();
-  } 
+  }
   else {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -250,7 +288,7 @@ void conectarMQTT() {
       lcd.setCursor(0, 0);
       lcd.print("MQTT conectado");
       lcd.setCursor(0, 1);
-      lcd.print("3 topicos OK");
+      lcd.print("Topicos OK");
 
       delay(2000);
     } else {
@@ -281,8 +319,12 @@ float lerPH() {
 
 int lerLuminosidade() {
   int leituraADC = analogRead(LDR_PIN);
-  int luminosidade = map(leituraADC, 0, 4095, 0, 1000);
-  return constrain(luminosidade, 0, 1000);
+
+  // Simulação em lux para ficar mais coerente com o banco:
+  // TB_METRICAS_TANQUE.luminosidade
+  int luminosidade = map(leituraADC, 0, 4095, 0, 15000);
+
+  return constrain(luminosidade, 0, 15000);
 }
 
 float lerTemperatura() {
@@ -305,28 +347,48 @@ int lerTurbidez() {
 
 // =====================
 // Status operacional
+// Os nomes de alerta estão alinhados com CK_ALERTA_TIPO do banco:
+// PH_CRITICO
+// PH_ALTO
+// PH_BAIXO
+// TEMPERATURA_ALTA
+// TEMPERATURA_BAIXA
+// TURBIDEZ_FORA_PADRAO
+// LUMINOSIDADE_BAIXA
 // =====================
 String obterStatusTanque(
-  bool phNormal,
-  bool luzNormal,
-  bool tempNormal,
-  bool turbidezBaixa,
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
   bool prontoColheita
 ) {
-  if (!phNormal) {
-    return "ALERTA_PH";
+  if (ph < 4.5 || ph > 10.5) {
+    return "PH_CRITICO";
   }
 
-  if (!tempNormal) {
-    return "ALERTA_TEMP";
+  if (ph < PH_MIN_IDEAL) {
+    return "PH_BAIXO";
   }
 
-  if (!luzNormal) {
-    return "ALERTA_LUZ";
+  if (ph > PH_MAX_IDEAL) {
+    return "PH_ALTO";
   }
 
-  if (turbidezBaixa) {
-    return "TURBIDEZ_BAIXA";
+  if (temperatura > TEMP_MAX_IDEAL) {
+    return "TEMPERATURA_ALTA";
+  }
+
+  if (temperatura < TEMP_MIN_IDEAL) {
+    return "TEMPERATURA_BAIXA";
+  }
+
+  if (luminosidade < LUMINOSIDADE_MIN_IDEAL) {
+    return "LUMINOSIDADE_BAIXA";
+  }
+
+  if (turbidez < TURBIDEZ_MIN_IDEAL) {
+    return "TURBIDEZ_FORA_PADRAO";
   }
 
   if (prontoColheita) {
@@ -337,34 +399,66 @@ String obterStatusTanque(
 }
 
 String obterMensagemAlerta(String statusTanque) {
-  if (statusTanque == "ALERTA_PH") {
-    return "pH fora da faixa ideal do biofotorreator";
+  if (statusTanque == "PH_CRITICO") {
+    return "pH em faixa critica para o biofotorreator";
   }
 
-  if (statusTanque == "ALERTA_TEMP") {
-    return "Temperatura da agua fora da faixa ideal";
+  if (statusTanque == "PH_BAIXO") {
+    return "pH abaixo da faixa ideal do tanque";
   }
 
-  if (statusTanque == "ALERTA_LUZ") {
-    return "Luminosidade local fora da faixa ideal";
+  if (statusTanque == "PH_ALTO") {
+    return "pH acima da faixa ideal do tanque";
   }
 
-  if (statusTanque == "TURBIDEZ_BAIXA") {
-    return "Turbidez abaixo do minimo esperado";
+  if (statusTanque == "TEMPERATURA_ALTA") {
+    return "Temperatura acima da faixa ideal do tanque";
   }
 
-  if (statusTanque == "PRONTO_COLHEITA") {
-    return "Biomassa atingiu turbidez ideal para colheita";
+  if (statusTanque == "TEMPERATURA_BAIXA") {
+    return "Temperatura abaixo da faixa ideal do tanque";
+  }
+
+  if (statusTanque == "LUMINOSIDADE_BAIXA") {
+    return "Luminosidade abaixo do minimo esperado";
+  }
+
+  if (statusTanque == "TURBIDEZ_FORA_PADRAO") {
+    return "Turbidez fora do padrao esperado";
   }
 
   return "Sistema operando normalmente";
 }
 
+String obterSeveridadeAlerta(String statusTanque) {
+  if (statusTanque == "PH_CRITICO") {
+    return "CRITICA";
+  }
+
+  if (statusTanque == "PH_BAIXO" || statusTanque == "PH_ALTO") {
+    return "ALTA";
+  }
+
+  if (statusTanque == "TEMPERATURA_ALTA" || statusTanque == "TEMPERATURA_BAIXA") {
+    return "ALTA";
+  }
+
+  if (statusTanque == "LUMINOSIDADE_BAIXA") {
+    return "MEDIA";
+  }
+
+  if (statusTanque == "TURBIDEZ_FORA_PADRAO") {
+    return "BAIXA";
+  }
+
+  return "BAIXA";
+}
+
 // =====================
 // Atuadores e display
 // =====================
-void atualizarAtuadores(bool sistemaNormal) {
-  if (sistemaNormal) {
+void atualizarAtuadores(bool sistemaSemAlerta) {
+  if (sistemaSemAlerta) {
     digitalWrite(LED_VERDE_PIN, HIGH);
     digitalWrite(LED_VERMELHO_PIN, LOW);
   } else {
@@ -392,27 +486,36 @@ void atualizarDisplay(
 
   if (servoManualAberto) {
     lcd.print("SERVO MANUAL ON");
-  } 
+  }
   else if (statusTanque == "NORMAL") {
     lcd.print("L:");
     lcd.print(luminosidade);
     lcd.print(" Tu:");
     lcd.print(turbidez);
-  } 
+  }
   else if (statusTanque == "PRONTO_COLHEITA") {
     lcd.print("PRONTO COLHEITA");
-  } 
-  else if (statusTanque == "ALERTA_PH") {
-    lcd.print("ALERTA PH");
-  } 
-  else if (statusTanque == "ALERTA_TEMP") {
-    lcd.print("ALERTA TEMP");
-  } 
-  else if (statusTanque == "ALERTA_LUZ") {
-    lcd.print("ALERTA LUZ");
-  } 
-  else if (statusTanque == "TURBIDEZ_BAIXA") {
-    lcd.print("TURBIDEZ BAIXA");
+  }
+  else if (statusTanque == "PH_CRITICO") {
+    lcd.print("PH CRITICO");
+  }
+  else if (statusTanque == "PH_BAIXO") {
+    lcd.print("PH BAIXO");
+  }
+  else if (statusTanque == "PH_ALTO") {
+    lcd.print("PH ALTO");
+  }
+  else if (statusTanque == "TEMPERATURA_ALTA") {
+    lcd.print("TEMP ALTA");
+  }
+  else if (statusTanque == "TEMPERATURA_BAIXA") {
+    lcd.print("TEMP BAIXA");
+  }
+  else if (statusTanque == "LUMINOSIDADE_BAIXA") {
+    lcd.print("LUZ BAIXA");
+  }
+  else if (statusTanque == "TURBIDEZ_FORA_PADRAO") {
+    lcd.print("TURBIDEZ ALERTA");
   }
 }
 
@@ -427,19 +530,32 @@ void publicarAlerta(
   int turbidez,
   bool prontoColheita
 ) {
-  StaticJsonDocument<384> doc;
+  if (!ehAlertaCritico(statusTanque)) {
+    return;
+  }
 
-  doc["dispositivo_id"] = DISPOSITIVO_ID;
-  doc["tipo"] = statusTanque;
+  StaticJsonDocument<512> doc;
+
+  doc["idDispositivo"] = DISPOSITIVO_ID;
+  doc["idTanque"] = TANQUE_ID;
+  doc["idFazenda"] = FAZENDA_ID;
+
+  // Nome em camelCase para facilitar DTO na .NET.
+  // Valor alinhado com CK_ALERTA_TIPO do banco.
+  doc["tipoAlerta"] = statusTanque;
+  doc["severidade"] = obterSeveridadeAlerta(statusTanque);
+  doc["statusAlerta"] = "ABERTO";
   doc["mensagem"] = obterMensagemAlerta(statusTanque);
-  doc["pH"] = arredondar1Casa(ph);
-  doc["temp"] = arredondar1Casa(temperatura);
+
+  doc["ph"] = arredondar1Casa(ph);
+  doc["temperatura"] = arredondar1Casa(temperatura);
   doc["turbidez"] = turbidez;
   doc["luminosidade"] = luminosidade;
-  doc["pronto_colheita"] = prontoColheita;
-  doc["servo_aberto"] = servoAbertoAtual;
 
-  char payload[384];
+  doc["prontoColheita"] = prontoColheita;
+  doc["servoAberto"] = servoAbertoAtual;
+
+  char payload[512];
   serializeJson(doc, payload);
 
   Serial.print("ALERTA enviado via MQTT: ");
@@ -456,7 +572,7 @@ void verificarEPublicarAlerta(
   int turbidez,
   bool prontoColheita
 ) {
-  if (statusTanque == "NORMAL") {
+  if (!ehAlertaCritico(statusTanque)) {
     ultimoAlertaPublicado = "";
     return;
   }
@@ -486,18 +602,24 @@ void publicarTelemetria(
   String statusTanque,
   bool prontoColheita
 ) {
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<512> doc;
 
-  doc["dispositivo_id"] = DISPOSITIVO_ID;
-  doc["pH"] = arredondar1Casa(ph);
-  doc["temp"] = arredondar1Casa(temperatura);
+  // Campos principais alinhados com a .NET e com o banco.
+  doc["idDispositivo"] = DISPOSITIVO_ID;
+  doc["idTanque"] = TANQUE_ID;
+  doc["idFazenda"] = FAZENDA_ID;
+
+  doc["ph"] = arredondar1Casa(ph);
+  doc["temperatura"] = arredondar1Casa(temperatura);
   doc["turbidez"] = turbidez;
   doc["luminosidade"] = luminosidade;
-  doc["status"] = statusTanque;
-  doc["pronto_colheita"] = prontoColheita;
-  doc["servo_aberto"] = servoAbertoAtual;
 
-  char payload[384];
+  // Vai para payload_original no banco.
+  doc["status"] = statusTanque;
+  doc["prontoColheita"] = prontoColheita;
+  doc["servoAberto"] = servoAbertoAtual;
+
+  char payload[512];
   serializeJson(doc, payload);
 
   Serial.print("TELEMETRIA enviada via MQTT: ");
@@ -555,9 +677,9 @@ void setup() {
   servoAbertoAtual = false;
 
   lcd.setCursor(0, 0);
-  lcd.print("Phycocarbon");
+  lcd.print("Algaspace IoT");
   lcd.setCursor(0, 1);
-  lcd.print("3 topicos MQTT");
+  lcd.print("Banco OK");
 
   delay(1500);
 
@@ -592,27 +714,26 @@ void loop() {
   bool phNormal = ph >= PH_MIN_IDEAL && ph <= PH_MAX_IDEAL;
   bool luzNormal = luminosidade >= LUMINOSIDADE_MIN_IDEAL && luminosidade <= LUMINOSIDADE_MAX_IDEAL;
   bool tempNormal = temperatura >= TEMP_MIN_IDEAL && temperatura <= TEMP_MAX_IDEAL;
-
   bool turbidezBaixa = turbidez < TURBIDEZ_MIN_IDEAL;
 
   bool prontoColheita =
     phNormal &&
     luzNormal &&
     tempNormal &&
+    !turbidezBaixa &&
     turbidez >= TURBIDEZ_COLHEITA;
 
-  bool turbidezNormal = !turbidezBaixa;
-  bool sistemaNormal = phNormal && luzNormal && tempNormal && turbidezNormal;
-
   String statusTanque = obterStatusTanque(
-    phNormal,
-    luzNormal,
-    tempNormal,
-    turbidezBaixa,
+    ph,
+    luminosidade,
+    temperatura,
+    turbidez,
     prontoColheita
   );
 
-  atualizarAtuadores(sistemaNormal);
+  bool sistemaSemAlerta = !ehAlertaCritico(statusTanque);
+
+  atualizarAtuadores(sistemaSemAlerta);
   atualizarDisplay(ph, luminosidade, temperatura, turbidez, statusTanque);
 
   verificarEPublicarAlerta(
