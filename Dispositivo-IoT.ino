@@ -19,14 +19,16 @@ const char* WIFI_PASSWORD = "";
 const char* MQTT_BROKER = "broker.hivemq.com";
 const int MQTT_PORT = 1883;
 
-const char* MQTT_CLIENT_ID_BASE = "algaspace-esp32-fazenda5-tanque10";
+const char* MQTT_CLIENT_ID_BASE = "phycocarbon-esp32-tanque01";
 
 // IMPORTANTE:
-// O topico de metricas esta alinhado com o banco:
-// TB_DISPOSITIVO_IOT.topico_mqtt = algaspace/fazenda/5/tanque/10/metricas
-const char* MQTT_TOPIC_TELEMETRIA = "algaspace/fazenda/5/tanque/10/metricas";
-const char* MQTT_TOPIC_COMANDOS   = "algaspace/fazenda/5/tanque/10/comandos";
-const char* MQTT_TOPIC_ALERTAS    = "algaspace/fazenda/5/tanque/10/alertas";
+// Topicos alinhados com a API .NET no Render.
+// 1) telemetria: ESP32 publica metricas para a .NET salvar no Oracle.
+// 2) comandos: ESP32 assina comandos enviados pelo backend/app.
+// 3) alertas: ESP32 publica eventos criticos para documentar o terceiro topico MQTT.
+const char* MQTT_TOPIC_TELEMETRIA = "phycocarbon/fiap/tanque01/telemetria";
+const char* MQTT_TOPIC_COMANDOS   = "phycocarbon/fiap/tanque01/comandos";
+const char* MQTT_TOPIC_ALERTAS    = "phycocarbon/fiap/tanque01/alertas";
 
 // =====================
 // Identificação alinhada com o banco
@@ -92,6 +94,26 @@ const unsigned long INTERVALO_PUBLICACAO_MS = 5000;
 unsigned long ultimaPublicacao = 0;
 
 // =====================
+// Controle anti-duplicidade de telemetria
+// Publica no MQTT somente quando houver mudanca relevante.
+// Evita entupir o Oracle com varias linhas iguais.
+// =====================
+bool primeiraTelemetriaPublicada = false;
+
+float ultimoPhTelemetria = -999.0;
+float ultimaTemperaturaTelemetria = -999.0;
+int ultimaTurbidezTelemetria = -999;
+int ultimaLuminosidadeTelemetria = -999;
+String ultimoStatusTelemetria = "";
+bool ultimoProntoColheitaTelemetria = false;
+bool ultimoServoAbertoTelemetria = false;
+
+const float LIMIAR_MUDANCA_PH = 0.1;
+const float LIMIAR_MUDANCA_TEMPERATURA = 0.5;
+const int LIMIAR_MUDANCA_TURBIDEZ = 10;
+const int LIMIAR_MUDANCA_LUMINOSIDADE = 50;
+
+// =====================
 // Objetos
 // =====================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -113,6 +135,68 @@ float mapFloat(float valor, float entradaMin, float entradaMax, float saidaMin, 
 
 float arredondar1Casa(float valor) {
   return round(valor * 10.0) / 10.0;
+}
+
+bool devePublicarTelemetria(
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
+  String statusTanque,
+  bool prontoColheita
+) {
+  if (!primeiraTelemetriaPublicada) {
+    return true;
+  }
+
+  if (fabs(ph - ultimoPhTelemetria) >= LIMIAR_MUDANCA_PH) {
+    return true;
+  }
+
+  if (fabs(temperatura - ultimaTemperaturaTelemetria) >= LIMIAR_MUDANCA_TEMPERATURA) {
+    return true;
+  }
+
+  if (abs(turbidez - ultimaTurbidezTelemetria) >= LIMIAR_MUDANCA_TURBIDEZ) {
+    return true;
+  }
+
+  if (abs(luminosidade - ultimaLuminosidadeTelemetria) >= LIMIAR_MUDANCA_LUMINOSIDADE) {
+    return true;
+  }
+
+  if (statusTanque != ultimoStatusTelemetria) {
+    return true;
+  }
+
+  if (prontoColheita != ultimoProntoColheitaTelemetria) {
+    return true;
+  }
+
+  if (servoAbertoAtual != ultimoServoAbertoTelemetria) {
+    return true;
+  }
+
+  return false;
+}
+
+void atualizarUltimaTelemetria(
+  float ph,
+  int luminosidade,
+  float temperatura,
+  int turbidez,
+  String statusTanque,
+  bool prontoColheita
+) {
+  primeiraTelemetriaPublicada = true;
+
+  ultimoPhTelemetria = ph;
+  ultimaTemperaturaTelemetria = temperatura;
+  ultimaTurbidezTelemetria = turbidez;
+  ultimaLuminosidadeTelemetria = luminosidade;
+  ultimoStatusTelemetria = statusTanque;
+  ultimoProntoColheitaTelemetria = prontoColheita;
+  ultimoServoAbertoTelemetria = servoAbertoAtual;
 }
 
 bool ehAlertaCritico(String statusTanque) {
@@ -604,20 +688,16 @@ void publicarTelemetria(
 ) {
   StaticJsonDocument<512> doc;
 
-  // Campos principais alinhados com a .NET e com o banco.
-  doc["idDispositivo"] = DISPOSITIVO_ID;
-  doc["idTanque"] = TANQUE_ID;
-  doc["idFazenda"] = FAZENDA_ID;
-
-  doc["ph"] = arredondar1Casa(ph);
-  doc["temperatura"] = arredondar1Casa(temperatura);
+  // Payload alinhado com o DTO da API .NET:
+  // IotTelemetriaRequestDto
+  doc["dispositivo_id"] = DISPOSITIVO_ID;
+  doc["pH"] = arredondar1Casa(ph);
+  doc["temp"] = arredondar1Casa(temperatura);
   doc["turbidez"] = turbidez;
   doc["luminosidade"] = luminosidade;
-
-  // Vai para payload_original no banco.
   doc["status"] = statusTanque;
-  doc["prontoColheita"] = prontoColheita;
-  doc["servoAberto"] = servoAbertoAtual;
+  doc["pronto_colheita"] = prontoColheita;
+  doc["servo_aberto"] = servoAbertoAtual;
 
   char payload[512];
   serializeJson(doc, payload);
@@ -766,14 +846,34 @@ void loop() {
   if (agora - ultimaPublicacao >= INTERVALO_PUBLICACAO_MS) {
     ultimaPublicacao = agora;
 
-    publicarTelemetria(
-      ph,
-      luminosidade,
-      temperatura,
-      turbidez,
-      statusTanque,
-      prontoColheita
-    );
+    if (devePublicarTelemetria(
+          ph,
+          luminosidade,
+          temperatura,
+          turbidez,
+          statusTanque,
+          prontoColheita
+        )) {
+      publicarTelemetria(
+        ph,
+        luminosidade,
+        temperatura,
+        turbidez,
+        statusTanque,
+        prontoColheita
+      );
+
+      atualizarUltimaTelemetria(
+        ph,
+        luminosidade,
+        temperatura,
+        turbidez,
+        statusTanque,
+        prontoColheita
+      );
+    } else {
+      Serial.println("Telemetria sem mudanca relevante. MQTT nao publicado.");
+    }
   }
 
   delay(1000);
