@@ -126,13 +126,9 @@ Porta MQTT:
 
 O projeto utiliza três tópicos MQTT principais:
 
-| Tipo       | Tópico                                   | Função                                    |
-| ---------- | ---------------------------------------- | ----------------------------------------- |
-| Telemetria | `algaspace/fazenda/5/tanque/10/metricas` | Envio periódico das leituras dos sensores |
-| Comandos   | `algaspace/fazenda/5/tanque/10/comandos` | Recebimento de comandos remotos           |
-| Alertas    | `algaspace/fazenda/5/tanque/10/alertas`  | Publicação de eventos críticos detectados |
-
-O tópico de telemetria está alinhado com o campo `topico_mqtt` da tabela `TB_DISPOSITIVO_IOT`.
+- `phycocarbon/fiap/tanque01/telemetria`: publicação das métricas do tanque, como pH, temperatura, turbidez e luminosidade.
+- `phycocarbon/fiap/tanque01/comandos`: recebimento de comandos remotos para o ESP32, como abrir/fechar o atuador.
+- `phycocarbon/fiap/tanque01/alertas`: publicação de eventos críticos detectados pelo dispositivo IoT.
 
 ## Tópico de Telemetria
 
